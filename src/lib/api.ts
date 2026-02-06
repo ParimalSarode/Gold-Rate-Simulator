@@ -149,14 +149,17 @@ function getMockRate(metal: 'XAU' | 'XAG', currency: Currency, city: City = 'Nat
     } as MetalRate;
 }
 
-function generateMockHistory(metal: 'XAU' | 'XAG', currency: Currency, range: TimeRange) {
+function generateMockHistory(metal: 'XAU' | 'XAG', currency: Currency, range: TimeRange, city: City = 'National') {
     const data = [];
     const now = new Date();
 
     // Get base price for the metal in valid currency
     const baseUsdPrice = MOCK_DATA[metal].price || 0;
     const factor = CURRENCY_FACTORS[currency];
-    let price = baseUsdPrice * factor;
+    const variance = CITY_VARIANCE[city] || 0;
+
+    // Apply currency factor and city variance
+    let price = baseUsdPrice * factor * (1 + variance);
 
     // Convert to per gram immediately since dashboard displays per gram
     price = price / 31.1035;
