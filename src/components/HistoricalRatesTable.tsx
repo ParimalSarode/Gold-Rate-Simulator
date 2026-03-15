@@ -18,14 +18,18 @@ export default function HistoricalRatesTable({ currency, city }: HistoricalRates
             // Fetch gold history with city variance
             const gold = await fetchHistory('XAU', currency, '1M', city);
             return gold.slice(0, 10); // Last 10 days
-        }
+        },
+        refetchInterval: false,
+        staleTime: Infinity,
     });
 
     // We need a helper to get silver price for the same date if possible, 
     // or just fetch silver history separately.
     const { data: silverHistory } = useQuery({
         queryKey: ['history', 'XAG', currency, '1M', city],
-        queryFn: () => fetchHistory('XAG', currency, '1M', city)
+        queryFn: () => fetchHistory('XAG', currency, '1M', city),
+        refetchInterval: false,
+        staleTime: Infinity,
     });
 
     if (isLoading) {

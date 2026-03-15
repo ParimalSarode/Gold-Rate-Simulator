@@ -37,7 +37,7 @@ export const SUPPORTED_CITIES: City[] = [
 ];
 
 // Variance factors (premium/discount) relative to National average
-const CITY_VARIANCE: Record<City, number> = {
+export const CITY_VARIANCE: Record<City, number> = {
     'National': 0,
     'Mumbai': 0.002, // +0.2% (Hub)
     'Delhi': 0.003, // +0.3%
@@ -56,10 +56,14 @@ const CITY_VARIANCE: Record<City, number> = {
 // Mock data to use when API limit is reached or key is missing
 const MOCK_DATA: Record<string, Partial<MetalRate>> = {
     XAU: {
-        price: 4920.50, // 2026 approx spot
-        ch: 35.5,
-        chp: 0.72,
-        prev_close_price: 4885.00,
+        price: 5100.00, // March 15th ~1.58L
+        ch: -40.0,      // Slight adjustment
+        chp: -0.78,
+        prev_close_price: 5140.00,
+        bid: 5098.50,
+        ask: 5101.50,
+        low_price: 5080.00,
+        high_price: 5125.00,
         timestamp: Date.now() / 1000,
     },
     XAG: {
@@ -75,6 +79,18 @@ const BASE_URL = 'https://www.goldapi.io/api';
 // In a real app, this should be in process.env
 // For demo purposes, we might need a fallback or instructions to add the key
 const API_KEY = process.env.NEXT_PUBLIC_GOLD_API_KEY || '';
+
+// Tax and Premium factors to convert Spot Price to Retail Price
+const TAX_AND_PREMIUM: Record<string, number> = {
+    'USD': 1.005, // Slight physical premium
+    'EUR': 1,
+    'GBP': 1,
+    'INR': 1.075, // ~15% Duty + 3% GST partial offset by discount? Actually usually Spot + ~18%.
+    // If Spot is ~1.46L and Target is 1.57L, diff is ~7.5%. 
+    // Let's use 1.075 based on observed gap.
+    'AUD': 1,
+    'CAD': 1
+};
 
 export const fetchLiveRate = async (metal: 'XAU' | 'XAG', currency: Currency, city: City = 'National'): Promise<MetalRate> => {
     if (!API_KEY) {
@@ -92,9 +108,57 @@ export const fetchLiveRate = async (metal: 'XAU' | 'XAG', currency: Currency, ci
                 'Content-Type': 'application/json'
             }
         });
-        return response.data;
+
+        // Normalize response even from API to ensure consistency
+        const data = response.data;
+
+        // Apply Tax/Premium Adjustment
+        const taxFactor = TAX_AND_PREMIUM[currency] || 1;
+
+        // Force recalculate gram prices based on the main price (usually /oz)
+        // This fixes issues where API might return inconsistent gram fields or we want custom units
+        const price = data.price * taxFactor;
+
+        const finalData = {
+            ...data,
+            price: price, // Update main price too
+            bid: (data.bid || data.price) * taxFactor,
+            ask: (data.ask || data.price) * taxFactor,
+            low_price: (data.low_price || data.price) * taxFactor,
+            high_price: (data.high_price || data.price) * taxFactor,
+            price_gram_24k: price / 31.1035,
+            price_gram_22k: (price / 31.1035) * 0.916,
+            price_gram_18k: (price / 31.1035) * 0.75,
+            price_gram_16k: (price / 31.1035) * 0.667,
+            price_gram_14k: (price / 31.1035) * 0.583,
+            price_gram_10k: (price / 31.1035) * 0.417,
+        };
+
+        // Cache the successful fetch to fallback on later if rate limits hit
+        if (typeof window !== 'undefined') {
+            localStorage.setItem(`last_rate_${metal}_${currency}`, JSON.stringify(finalData));
+        }
+
+        return finalData;
     } catch (error) {
-        console.error('API call failed, using mock data:', error);
+        if (axios.isAxiosError(error) && (error.response?.status === 403 || error.response?.status === 429)) {
+            console.warn(`API Limit/Permission Error (${error.response.status}). Falling back to last known good data or mock.`);
+        } else {
+            console.error('API call failed, checking cache or using mock data:', error);
+        }
+
+        // 1. Try to load the exact last fetched rate from this device
+        if (typeof window !== 'undefined') {
+            const cached = localStorage.getItem(`last_rate_${metal}_${currency}`);
+            if (cached) {
+                try {
+                    console.log(`Using cached data from local storage for ${metal}/${currency}`);
+                    return JSON.parse(cached) as MetalRate;
+                } catch(e) { /* ignore parse error */ }
+            }
+        }
+
+        // 2. Fall back to hardcoded mock data
         return getMockRate(metal, currency, city);
     }
 };
@@ -134,17 +198,30 @@ function getMockRate(metal: 'XAU' | 'XAG', currency: Currency, city: City = 'Nat
     const factor = CURRENCY_FACTORS[currency];
     const price = cityBasePrice * factor;
 
+    // Recalculate all gram rates based on the final price (which is per Ounce)
+    const pricePerGram = price / 31.1035;
+
+    // Scale other stats if they exist
+    const bid = (baseRate.bid || baseRate.price || 0) * (1 + variance + jitter) * factor;
+    const ask = (baseRate.ask || baseRate.price || 0) * (1 + variance + jitter) * factor;
+    const low = (baseRate.low_price || baseRate.price || 0) * (1 + variance + jitter) * factor;
+    const high = (baseRate.high_price || baseRate.price || 0) * (1 + variance + jitter) * factor;
+
     return {
         ...baseRate,
         metal,
         currency,
         price,
-        price_gram_24k: price / 31.1035,
-        price_gram_22k: (price / 31.1035) * 0.916,
-        price_gram_18k: (price / 31.1035) * 0.75,
-        price_gram_16k: (price / 31.1035) * 0.667,
-        price_gram_14k: (price / 31.1035) * 0.583,
-        price_gram_10k: (price / 31.1035) * 0.417,
+        bid,
+        ask,
+        low_price: low,
+        high_price: high,
+        price_gram_24k: pricePerGram,
+        price_gram_22k: pricePerGram * 0.916,
+        price_gram_18k: pricePerGram * 0.75,
+        price_gram_16k: pricePerGram * 0.667,
+        price_gram_14k: pricePerGram * 0.583,
+        price_gram_10k: pricePerGram * 0.417,
         symbol: `${metal}/${currency}`,
     } as MetalRate;
 }

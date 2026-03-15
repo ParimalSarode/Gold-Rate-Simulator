@@ -29,13 +29,15 @@ export default function Dashboard() {
             setLastUpdated(new Date());
             return data;
         },
-        refetchInterval: 60000,
+        refetchInterval: false, // Strict "once per reload"
+        staleTime: Infinity,
     });
 
     const { data: silverData, isLoading: isSilverLoading, refetch: refetchSilver } = useQuery({
         queryKey: ['liveRate', 'XAG', currency, city],
         queryFn: () => fetchLiveRate('XAG', currency, city),
-        refetchInterval: 60000,
+        refetchInterval: false,
+        staleTime: Infinity,
     });
 
     // Calculate trends (Simple mock logic based on current price vs prev close if history not fully ready)
@@ -45,7 +47,9 @@ export default function Dashboard() {
     // Actually plan said SMA. Let's fetch history for Gold to compute SMA.
     const { data: goldHistory } = useQuery({
         queryKey: ['history', 'XAU', currency, '1W'], // Use 1W for trend calculation as fallback
-        queryFn: () => fetchHistory('XAU', currency, '1W')
+        queryFn: () => fetchHistory('XAU', currency, '1W'),
+        refetchInterval: false,
+        staleTime: Infinity,
     });
 
     const goldTrend: 'up' | 'down' | 'neutral' = useMemo(() => {
@@ -169,20 +173,20 @@ export default function Dashboard() {
                                 </CardHeader>
                                 <CardContent className="space-y-4 text-sm">
                                     <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Bid</span>
-                                        <span className="font-medium">{goldData?.bid?.toFixed(2) ?? '-'}</span>
+                                        <span className="text-muted-foreground">Bid /g</span>
+                                        <span className="font-medium">{goldData?.bid ? (goldData.bid / 31.1035).toFixed(2) : '-'}</span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Ask</span>
-                                        <span className="font-medium">{goldData?.ask?.toFixed(2) ?? '-'}</span>
+                                        <span className="text-muted-foreground">Ask /g</span>
+                                        <span className="font-medium">{goldData?.ask ? (goldData.ask / 31.1035).toFixed(2) : '-'}</span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Day High</span>
-                                        <span className="font-medium text-green-600">{goldData?.high_price?.toFixed(2) ?? '-'}</span>
+                                        <span className="text-muted-foreground">Day High /g</span>
+                                        <span className="font-medium text-green-600">{goldData?.high_price ? (goldData.high_price / 31.1035).toFixed(2) : '-'}</span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Day Low</span>
-                                        <span className="font-medium text-red-600">{goldData?.low_price?.toFixed(2) ?? '-'}</span>
+                                        <span className="text-muted-foreground">Day Low /g</span>
+                                        <span className="font-medium text-red-600">{goldData?.low_price ? (goldData.low_price / 31.1035).toFixed(2) : '-'}</span>
                                     </div>
                                 </CardContent>
                             </Card>

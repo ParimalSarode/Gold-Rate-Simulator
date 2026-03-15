@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { fetchLiveRate, SUPPORTED_CITIES, City, Currency } from '@/lib/api';
+import { fetchLiveRate, SUPPORTED_CITIES, City, Currency, CITY_VARIANCE } from '@/lib/api';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,20 +14,35 @@ export default function CityRatesTable({ currency }: CityRatesTableProps) {
     const { data: cityRates, isLoading } = useQuery({
         queryKey: ['cityRates', currency],
         queryFn: async () => {
-            const promises = SUPPORTED_CITIES
+            // Fetch base rates ONCE to avoid API rate limits (429)
+            const [baseGold, baseSilver] = await Promise.all([
+                fetchLiveRate('XAU', currency, 'National'),
+                fetchLiveRate('XAG', currency, 'National')
+            ]);
+
+            return SUPPORTED_CITIES
                 .filter(city => city !== 'National')
-                .map(async (city) => {
-                    const gold24k = await fetchLiveRate('XAU', currency, city);
+                .map((city) => {
+                    const variance = CITY_VARIANCE[city] || 0;
+
+                    // Apply variance locally
+                    const goldPrice = baseGold.price * (1 + variance);
+                    const silverPrice = baseSilver.price * (1 + variance);
+
+                    // Calculate gram rates
+                    const gold24k = goldPrice / 31.1035;
+                    const silverGram = silverPrice / 31.1035;
+
                     return {
                         city,
-                        gold24k: gold24k.price_gram_24k,
-                        gold22k: gold24k.price_gram_22k,
-                        silver: (await fetchLiveRate('XAG', currency, city)).price / 31.1035 // per gram
+                        gold24k: gold24k,
+                        gold22k: gold24k * 0.916,
+                        silver: silverGram
                     };
                 });
-            return Promise.all(promises);
         },
-        refetchInterval: 60000 * 5, // Refresh every 5 mins
+        refetchInterval: false, // Strict "once per reload" as requested
+        staleTime: Infinity,
     });
 
     if (isLoading) {

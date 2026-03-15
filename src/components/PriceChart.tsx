@@ -17,7 +17,8 @@ export default function PriceChart({ metal, currency, range, currentPrice }: Pri
     const { data: tempHistory, isLoading, isError } = useQuery({
         queryKey: ['history', metal, currency, range],
         queryFn: () => fetchHistory(metal, currency, range, 'National'), // Chart always shows National trend for now unless we pass city
-        // refetchInterval: range === '1D' ? 1000 : undefined, // Disabled as per user request
+        refetchInterval: false,
+        staleTime: Infinity,
     });
 
     const isGold = metal === 'XAU';
